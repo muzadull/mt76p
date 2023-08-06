@@ -354,13 +354,10 @@ mt7603_sta_add(struct mt76_dev *mdev, struct ieee80211_vif *vif,
 
 	INIT_LIST_HEAD(&msta->wcid.poll_list);
 	__skb_queue_head_init(&msta->psq);
-	msta->ps = ~0;
-	msta->smps = ~0;
 	msta->wcid.sta = 1;
 	msta->wcid.idx = idx;
 	msta->vif = mvif;
 	mt7603_wtbl_init(dev, idx, mvif->idx, sta->addr);
-	mt7603_wtbl_set_ps(dev, msta, false);
 
 	if (vif->type == NL80211_IFTYPE_AP)
 		set_bit(MT_WCID_FLAG_CHECK_PS, &msta->wcid.flags);
@@ -409,78 +406,6 @@ mt7603_ps_tx_list(struct mt7603_dev *dev, struct sk_buff_head *list)
 
 		mt76_tx_queue_skb_raw(dev, dev->mphy.q_tx[qid], skb, 0);
 	}
-}
-
-void
-mt7603_sta_ps(struct mt76_dev *mdev, struct ieee80211_sta *sta, bool ps)
-{
-	struct mt7603_dev *dev = container_of(mdev, struct mt7603_dev, mt76);
-	struct mt7603_sta *msta = (struct mt7603_sta *)sta->drv_priv;
-	struct sk_buff_head list;
-
-	mt76_stop_tx_queues(&dev->mphy, sta, true);
-	mt7603_wtbl_set_ps(dev, msta, ps);
-	if (ps)
-		return;
-
-	__skb_queue_head_init(&list);
-
-	spin_lock_bh(&dev->ps_lock);
-	skb_queue_splice_tail_init(&msta->psq, &list);
-	spin_unlock_bh(&dev->ps_lock);
-
-	mt7603_ps_tx_list(dev, &list);
-}
-
-static void
-mt7603_ps_set_more_data(struct sk_buff *skb)
-{
-	struct ieee80211_hdr *hdr;
-
-	hdr = (struct ieee80211_hdr *)&skb->data[MT_TXD_SIZE];
-	hdr->frame_control |= cpu_to_le16(IEEE80211_FCTL_MOREDATA);
-}
-
-static void
-mt7603_release_buffered_frames(struct ieee80211_hw *hw,
-			       struct ieee80211_sta *sta,
-			       u16 tids, int nframes,
-			       enum ieee80211_frame_release_type reason,
-			       bool more_data)
-{
-	struct mt7603_dev *dev = hw->priv;
-	struct mt7603_sta *msta = (struct mt7603_sta *)sta->drv_priv;
-	struct sk_buff_head list;
-	struct sk_buff *skb, *tmp;
-
-	__skb_queue_head_init(&list);
-
-	mt7603_wtbl_set_ps(dev, msta, false);
-
-	spin_lock_bh(&dev->ps_lock);
-	skb_queue_walk_safe(&msta->psq, skb, tmp) {
-		if (!nframes)
-			break;
-
-		if (!(tids & BIT(skb->priority)))
-			continue;
-
-		skb_set_queue_mapping(skb, MT_TXQ_PSD);
-		__skb_unlink(skb, &msta->psq);
-		mt7603_ps_set_more_data(skb);
-		__skb_queue_tail(&list, skb);
-		nframes--;
-	}
-	spin_unlock_bh(&dev->ps_lock);
-
-	if (!skb_queue_empty(&list))
-		ieee80211_sta_eosp(sta);
-
-	mt7603_ps_tx_list(dev, &list);
-
-	if (nframes)
-		mt76_release_buffered_frames(hw, sta, tids, nframes, reason,
-					     more_data);
 }
 
 static int
@@ -660,8 +585,6 @@ mt7603_sta_rate_tbl_update(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	msta->n_rates = i;
 	mt7603_wtbl_set_rates(dev, msta, NULL, msta->rates);
 	msta->rate_probe = false;
-	mt7603_wtbl_set_smps(dev, msta,
-			     sta->deflink.smps_mode == IEEE80211_SMPS_DYNAMIC);
 	spin_unlock_bh(&dev->mt76.lock);
 }
 

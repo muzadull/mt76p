@@ -223,52 +223,6 @@ void mt7603_filter_tx(struct mt7603_dev *dev, int mac_idx, int idx, bool abort)
 	mt7603_wtbl_set_skip_tx(dev, idx, false);
 }
 
-void mt7603_wtbl_set_smps(struct mt7603_dev *dev, struct mt7603_sta *sta,
-			  bool enabled)
-{
-	u32 addr = mt7603_wtbl1_addr(sta->wcid.idx);
-
-	if (sta->smps == enabled)
-		return;
-
-	mt76_rmw_field(dev, addr + 2 * 4, MT_WTBL1_W2_SMPS, enabled);
-	sta->smps = enabled;
-}
-
-void mt7603_wtbl_set_ps(struct mt7603_dev *dev, struct mt7603_sta *sta,
-			bool enabled)
-{
-	int idx = sta->wcid.idx;
-	u32 addr;
-
-	spin_lock_bh(&dev->ps_lock);
-
-	if (sta->ps == enabled)
-		goto out;
-
-	mt76_wr(dev, MT_PSE_RTA,
-		FIELD_PREP(MT_PSE_RTA_TAG_ID, idx) |
-		FIELD_PREP(MT_PSE_RTA_PORT_ID, 0) |
-		FIELD_PREP(MT_PSE_RTA_QUEUE_ID, 1) |
-		FIELD_PREP(MT_PSE_RTA_REDIRECT_EN, enabled) |
-		MT_PSE_RTA_WRITE | MT_PSE_RTA_BUSY);
-
-	mt76_poll(dev, MT_PSE_RTA, MT_PSE_RTA_BUSY, 0, 5000);
-
-	if (enabled)
-		mt7603_filter_tx(dev, sta->vif->idx, idx, false);
-
-	addr = mt7603_wtbl1_addr(idx);
-	mt76_set(dev, MT_WTBL1_OR, MT_WTBL1_OR_PSM_WRITE);
-	mt76_rmw(dev, addr + 3 * 4, MT_WTBL1_W3_POWER_SAVE,
-		 enabled * MT_WTBL1_W3_POWER_SAVE);
-	mt76_clear(dev, MT_WTBL1_OR, MT_WTBL1_OR_PSM_WRITE);
-	sta->ps = enabled;
-
-out:
-	spin_unlock_bh(&dev->ps_lock);
-}
-
 void mt7603_wtbl_clear(struct mt7603_dev *dev, int idx)
 {
 	int wtbl2_frame_size = MT_PSE_PAGE_SIZE / MT_WTBL2_SIZE;
@@ -1064,7 +1018,6 @@ int mt7603_tx_prepare_skb(struct mt76_dev *mdev, void *txwi_ptr,
 		if ((info->flags & (IEEE80211_TX_CTL_NO_PS_BUFFER |
 				    IEEE80211_TX_CTL_CLEAR_PS_FILT)) ||
 		    (info->control.flags & IEEE80211_TX_CTRL_PS_RESPONSE))
-			mt7603_wtbl_set_ps(dev, msta, false);
 
 		mt76_tx_check_agg_ssn(sta, tx_info->skb);
 	}
