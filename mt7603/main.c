@@ -408,6 +408,48 @@ mt7603_ps_tx_list(struct mt7603_dev *dev, struct sk_buff_head *list)
 	}
 }
 
+static void
+mt7603_release_buffered_frames(struct ieee80211_hw *hw,
+			       struct ieee80211_sta *sta,
+			       u16 tids, int nframes,
+			       enum ieee80211_frame_release_type reason,
+			       bool more_data)
+{
+	struct mt7603_dev *dev = hw->priv;
+	struct mt7603_sta *msta = (struct mt7603_sta *)sta->drv_priv;
+	struct sk_buff_head list;
+	struct sk_buff *skb, *tmp;
+
+	__skb_queue_head_init(&list);
+
+	mt7603_wtbl_set_ps(dev, msta, false);
+
+	spin_lock_bh(&dev->ps_lock);
+	skb_queue_walk_safe(&msta->psq, skb, tmp) {
+		if (!nframes)
+			break;
+
+		if (!(tids & BIT(skb->priority)))
+			continue;
+
+		skb_set_queue_mapping(skb, MT_TXQ_PSD);
+		__skb_unlink(skb, &msta->psq);
+		mt7603_ps_set_more_data(skb);
+		__skb_queue_tail(&list, skb);
+		nframes--;
+	}
+	spin_unlock_bh(&dev->ps_lock);
+
+	if (!skb_queue_empty(&list))
+		ieee80211_sta_eosp(sta);
+
+	mt7603_ps_tx_list(dev, &list);
+
+	if (nframes)
+		mt76_release_buffered_frames(hw, sta, tids, nframes, reason,
+					     more_data);
+}
+
 static int
 mt7603_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	       struct ieee80211_vif *vif, struct ieee80211_sta *sta,
