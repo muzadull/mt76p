@@ -13,7 +13,6 @@ const struct mt76_driver_ops mt7603_drv_ops = {
 	.tx_complete_skb = mt7603_tx_complete_skb,
 	.rx_skb = mt7603_queue_rx_skb,
 	.rx_poll_complete = mt7603_rx_poll_complete,
-	.sta_ps = mt7603_sta_ps,
 	.sta_add = mt7603_sta_add,
 	.sta_assoc = mt7603_sta_assoc,
 	.sta_remove = mt7603_sta_remove,
@@ -116,9 +115,11 @@ mt7603_phy_init(struct mt7603_dev *dev)
 	int rx_chains = dev->mphy.antenna_mask;
 	int tx_chains = hweight8(rx_chains) - 1;
 
-	mt76_rmw(dev, MT_WF_RMAC_RMCR,
-		 (MT_WF_RMAC_RMCR_RX_STREAMS),
-		 (FIELD_PREP(MT_WF_RMAC_RMCR_RX_STREAMS, rx_chains));
+mt76_rmw(dev, MT_WF_RMAC_RMCR,
+		 (MT_WF_RMAC_RMCR_SMPS_MODE |
+		  MT_WF_RMAC_RMCR_RX_STREAMS),
+		 (FIELD_PREP(MT_WF_RMAC_RMCR_SMPS_MODE, 3) |
+		  FIELD_PREP(MT_WF_RMAC_RMCR_RX_STREAMS, rx_chains)));
 
 	mt76_rmw_field(dev, MT_TMAC_TCR, MT_TMAC_TCR_TX_STREAMS,
 		       tx_chains);
