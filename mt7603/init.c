@@ -116,10 +116,8 @@ mt7603_phy_init(struct mt7603_dev *dev)
 	int tx_chains = hweight8(rx_chains) - 1;
 
 mt76_rmw(dev, MT_WF_RMAC_RMCR,
-		 (MT_WF_RMAC_RMCR_SMPS_MODE |
-		  MT_WF_RMAC_RMCR_RX_STREAMS),
-		 (FIELD_PREP(MT_WF_RMAC_RMCR_SMPS_MODE, 3) |
-		  FIELD_PREP(MT_WF_RMAC_RMCR_RX_STREAMS, rx_chains)));
+		 (MT_WF_RMAC_RMCR_RX_STREAMS),
+		 (FIELD_PREP(MT_WF_RMAC_RMCR_RX_STREAMS, rx_chains)));
 
 	mt76_rmw_field(dev, MT_TMAC_TCR, MT_TMAC_TCR_TX_STREAMS,
 		       tx_chains);
